@@ -64,6 +64,10 @@ def build_wapi_url(raw_url: str, version: str) -> str:
     return f"{url}/wapi/{version}"
 
 
+def default_record_comment(cname_target: str) -> str:
+    return f"Managed by traefik2infoblox for {cname_target}"
+
+
 def _env_or_file(env: Mapping[str, str], name: str) -> Optional[str]:
     """Read a value from NAME, or from the file referenced by NAME_FILE (docker secrets)."""
     direct = env.get(name) or None
@@ -85,7 +89,8 @@ class Config:
     username: str
     password: str
     zone: str
-    cname_target: str
+    # None means: auto-detect the host FQDN from the Docker daemon at startup.
+    cname_target: Optional[str] = None
     view: str = "default"
     ssl_verify: Union[bool, str] = True
     timeout: int = 30
@@ -116,7 +121,6 @@ class Config:
                 ("INFOBLOX_USERNAME", username),
                 ("INFOBLOX_PASSWORD", password),
                 ("INFOBLOX_ZONE", zone),
-                ("CNAME_TARGET", cname_target),
             )
             if not value
         ]
@@ -124,7 +128,7 @@ class Config:
             raise ConfigError(f"Missing required environment variables: {', '.join(missing)}")
 
         zone = normalize_fqdn(zone)
-        cname_target = normalize_fqdn(cname_target)
+        cname_target = normalize_fqdn(cname_target) if cname_target else None
         wapi_url = build_wapi_url(raw_url, env.get("INFOBLOX_WAPI_VERSION", DEFAULT_WAPI_VERSION))
 
         ssl_verify: Union[bool, str] = True
@@ -154,10 +158,12 @@ class Config:
             raise ConfigError(f"LOG_LEVEL must be one of {sorted(_LOG_LEVELS)}, got {log_level!r}")
 
         record_comment = env.get("RECORD_COMMENT", "").strip()
-        if not record_comment:
+        if not record_comment and cname_target:
             # Include the target so several hosts can safely share one zone:
-            # each instance only ever adopts/deletes records carrying its own marker.
-            record_comment = f"Managed by traefik2infoblox for {cname_target}"
+            # each instance only ever adopts/deletes records carrying its own
+            # marker. With an auto-detected target this default is filled in
+            # at startup, after detection.
+            record_comment = default_record_comment(cname_target)
 
         return cls(
             wapi_url=wapi_url,

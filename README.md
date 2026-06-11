@@ -5,7 +5,8 @@ Compose stack) and keeps **Infoblox IPAM/DNS** in sync:
 
 - 🔍 Discovers every hostname declared in `Host()` / `HostSNI()` rules of Traefik router labels
 - ➕ **Automatically registers** a CNAME in Infoblox for each hostname, pointing at the FQDN of
-  the Docker host, as soon as a container with a new label starts
+  the Docker host (**auto-detected** via the Docker daemon, or set explicitly), as soon as a
+  container with a new label starts
 - 🧹 **Automatically deletes** the CNAME once the label has not been seen for **7 days**
   (configurable)
 - 🔒 Only ever touches records it created itself (identified by an ownership comment on the
@@ -60,7 +61,7 @@ services:
       INFOBLOX_USERNAME: api-user                  # API user
       INFOBLOX_PASSWORD: ${INFOBLOX_PASSWORD}
       INFOBLOX_ZONE: example.com                   # zone to manage
-      CNAME_TARGET: dockerhost01.example.com       # FQDN of this Docker host
+      # CNAME_TARGET: dockerhost01.example.com     # optional — auto-detected by default
 
 volumes:
   traefik2infoblox-data:
@@ -79,7 +80,7 @@ All configuration is done through environment variables:
 | `INFOBLOX_USERNAME` | ✅ | – | WAPI API user (or use `INFOBLOX_USERNAME_FILE` for Docker secrets) |
 | `INFOBLOX_PASSWORD` | ✅ | – | WAPI password (or use `INFOBLOX_PASSWORD_FILE`) |
 | `INFOBLOX_ZONE` | ✅ | – | DNS zone to manage (e.g. `example.com`). Only hostnames inside this zone are synced; others are logged and ignored |
-| `CNAME_TARGET` | ✅ | – | FQDN of the Docker host. Every discovered hostname becomes a CNAME pointing here |
+| `CNAME_TARGET` | | auto-detected | FQDN of the Docker host. Every discovered hostname becomes a CNAME pointing here. When unset, it is detected automatically (see below) |
 | `INFOBLOX_WAPI_VERSION` | | `v2.10` | WAPI version appended when `INFOBLOX_URL` contains no `/wapi/` path |
 | `INFOBLOX_VIEW` | | `default` | Infoblox DNS view |
 | `INFOBLOX_SSL_VERIFY` | | `true` | `true`, `false`, or a path to a CA bundle inside the container |
@@ -93,6 +94,22 @@ All configuration is done through environment variables:
 | `DRY_RUN` | | `false` | Log all create/update/delete actions without performing them |
 | `LOG_LEVEL` | | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `DOCKER_HOST` | | local socket | Standard Docker SDK variable, if the socket is not at `/var/run/docker.sock` |
+
+### Host FQDN auto-detection
+
+When `CNAME_TARGET` is not set, the container determines the Docker host's FQDN on its own
+(a container cannot use its *own* hostname — that would name the container, not the host):
+
+1. It asks the **Docker daemon** for the host's hostname (`docker info`). If that is already
+   fully qualified (contains a dot), it is used directly.
+2. Otherwise the short hostname is **resolved via DNS** from inside the container.
+3. If that fails too, the short hostname is **qualified with the managed zone**:
+   `<hostname>.<INFOBLOX_ZONE>`.
+
+The chosen target and its source are logged at startup, and a warning is logged if the result
+does not resolve in DNS. Set `CNAME_TARGET` explicitly when the detection would be ambiguous
+(e.g. the host's FQDN lives in a different domain than the zone and is not resolvable, or you
+use a Docker socket proxy that blocks the `info` endpoint).
 
 ### What gets picked up
 
@@ -111,8 +128,8 @@ comment does not match are **never updated and never deleted** — an existing m
 `myapp.example.com` record is left untouched and a warning is logged instead.
 
 Running **multiple Docker hosts against the same zone** is safe out of the box: the default
-comment includes each host's `CNAME_TARGET`, so each instance only manages its own records. If
-you override `RECORD_COMMENT`, give each host a distinct value.
+comment includes each host's CNAME target (explicit or auto-detected), so each instance only
+manages its own records. If you override `RECORD_COMMENT`, give each host a distinct value.
 
 > **Note:** a CNAME cannot be created at the zone apex (`example.com` itself) — that is a DNS
 > limitation and Infoblox will reject it; the error is logged and the rest of the sync

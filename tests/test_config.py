@@ -30,9 +30,10 @@ def test_missing_required_variables_listed():
         "INFOBLOX_USERNAME",
         "INFOBLOX_PASSWORD",
         "INFOBLOX_ZONE",
-        "CNAME_TARGET",
     ):
         assert name in message
+    # CNAME_TARGET is optional: it is auto-detected from the Docker host.
+    assert "CNAME_TARGET" not in message
 
 
 def test_wapi_url_variants():
@@ -75,6 +76,19 @@ def test_durations(tmp_path):
 
 def test_custom_record_comment(tmp_path):
     cfg = make_config(tmp_path, RECORD_COMMENT="my marker")
+    assert cfg.record_comment == "my marker"
+
+
+def test_cname_target_is_optional(tmp_path):
+    cfg = make_config(tmp_path, CNAME_TARGET="")
+    assert cfg.cname_target is None
+    # The default comment depends on the detected target, so it stays empty
+    # until startup fills it in.
+    assert cfg.record_comment == ""
+
+
+def test_cname_target_optional_keeps_custom_comment(tmp_path):
+    cfg = make_config(tmp_path, CNAME_TARGET="", RECORD_COMMENT="my marker")
     assert cfg.record_comment == "my marker"
 
 

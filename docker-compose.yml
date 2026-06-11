@@ -16,8 +16,9 @@ services:
       INFOBLOX_PASSWORD: ${INFOBLOX_PASSWORD:?set in .env}
       INFOBLOX_ZONE: example.com
       # FQDN of this Docker host; every discovered hostname becomes a CNAME
-      # pointing here.
-      CNAME_TARGET: dockerhost01.example.com
+      # pointing here. Optional: when unset it is auto-detected from the
+      # Docker daemon's hostname (DNS lookup / zone qualification as fallback).
+      # CNAME_TARGET: dockerhost01.example.com
       # Optional settings (defaults shown):
       # INFOBLOX_WAPI_VERSION: v2.10
       # INFOBLOX_VIEW: default

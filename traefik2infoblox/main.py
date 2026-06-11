@@ -5,14 +5,17 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import socket
 import sys
 import threading
 import time
+from dataclasses import replace
 from typing import Set
 
 import docker
 
-from .config import Config, ConfigError
+from .config import Config, ConfigError, default_record_comment
+from .hostinfo import resolve_host_fqdn
 from .infoblox import InfobloxClient, InfobloxError
 from .labels import collect_desired_hostnames
 from .state import State
@@ -65,9 +68,8 @@ def run() -> int:
         level=cfg.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     logger.info(
-        "Starting traefik2infoblox: zone=%s target=%s view=%s interval=%ss expire=%ss dry_run=%s",
+        "Starting traefik2infoblox: zone=%s view=%s interval=%ss expire=%ss dry_run=%s",
         cfg.zone,
-        cfg.cname_target,
         cfg.view,
         cfg.sync_interval,
         cfg.expire_after,
@@ -82,6 +84,37 @@ def run() -> int:
             "Cannot connect to the Docker daemon (%s). Is /var/run/docker.sock mounted?", exc
         )
         return 1
+
+    if cfg.cname_target:
+        target_source = "CNAME_TARGET environment variable"
+    else:
+        daemon_name = ""
+        try:
+            daemon_name = docker_client.info().get("Name") or ""
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read the host name from the Docker daemon: %s", exc)
+        try:
+            target, target_source = resolve_host_fqdn(daemon_name, cfg.zone)
+        except ValueError as exc:
+            logger.error(
+                "Could not auto-detect the host FQDN (%s); set CNAME_TARGET explicitly", exc
+            )
+            return 2
+        cfg = replace(
+            cfg,
+            cname_target=target,
+            record_comment=cfg.record_comment or default_record_comment(target),
+        )
+    logger.info("CNAME target: %s (from %s)", cfg.cname_target, target_source)
+    try:
+        socket.gethostbyname(cfg.cname_target)
+    except OSError:
+        logger.warning(
+            "CNAME target %s does not currently resolve from inside the container; "
+            "records will still point at it — set CNAME_TARGET explicitly if this "
+            "is not the intended host FQDN",
+            cfg.cname_target,
+        )
 
     infoblox = InfobloxClient(
         wapi_url=cfg.wapi_url,
