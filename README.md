@@ -135,6 +135,34 @@ manages its own records. If you override `RECORD_COMMENT`, give each host a dist
 > limitation and Infoblox will reject it; the error is logged and the rest of the sync
 > continues. Swarm service labels are not inspected (plain Docker / Compose only).
 
+### Hardened image
+
+The container is built on [Docker Hardened Images](https://docs.docker.com/dhi/)
+(`dhi.io/python`), using the official DHI multi-stage pattern: dependencies are installed in
+the `-dev` build stage and only the virtual environment is copied into the minimal runtime
+image. That means:
+
+- It runs as the **non-root** user (uid `65532`) — hence the `group_add`/`DOCKER_GID` entry in
+  the compose file to grant access to the Docker socket
+  (`export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)`).
+- The runtime image contains **no shell and no package manager**; the healthcheck and
+  entrypoint use exec form and need neither.
+- The compose file additionally enables `read_only` root filesystem (with a `tmpfs` for the
+  heartbeat file), `cap_drop: ALL` and `no-new-privileges`.
+- If you bind-mount a host directory to `/data` instead of using the named volume, `chown`
+  it to uid `65532` first. Named volumes inherit the correct ownership automatically.
+
+Pulling DHI base images requires authentication (`docker login dhi.io` with Docker Hub
+credentials that have DHI access). For the GitHub Actions image publish, set the
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets. If your organization mirrors
+DHI into its own namespace, override the bases at build time:
+
+```bash
+docker build \
+  --build-arg BUILD_IMAGE=docker.io/<org>/dhi-python:3.13-dev \
+  --build-arg RUNTIME_IMAGE=docker.io/<org>/dhi-python:3.13 .
+```
+
 ### Required Infoblox permissions
 
 The API user needs read/write permission for **CNAME records** in the managed zone (and
@@ -156,6 +184,8 @@ warning otherwise).
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest                      # run the test suite
+
+docker login dhi.io         # required: hardened base images need authentication
 docker build -t traefik2infoblox .
 ```
 

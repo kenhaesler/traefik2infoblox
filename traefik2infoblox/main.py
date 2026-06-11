@@ -81,7 +81,11 @@ def run() -> int:
         docker_client.ping()
     except Exception as exc:  # noqa: BLE001
         logger.error(
-            "Cannot connect to the Docker daemon (%s). Is /var/run/docker.sock mounted?", exc
+            "Cannot connect to the Docker daemon (%s). Is /var/run/docker.sock mounted "
+            "and readable by this user? The container runs as a non-root user, so the "
+            "socket's group must be granted (see group_add / DOCKER_GID in "
+            "docker-compose.yml).",
+            exc,
         )
         return 1
 
