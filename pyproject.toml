@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traefik2infoblox"
+version = "0.1.0"
+description = "Sync Traefik Host() rules from Docker labels to Infoblox CNAME records"
+requires-python = ">=3.11"
+dependencies = [
+    "docker>=7.1,<8",
+    "requests>=2.32,<3",
+    "urllib3>=2,<3",
+]
+
+[project.scripts]
+traefik2infoblox = "traefik2infoblox.main:run_cli"
+
+[tool.setuptools]
+packages = ["traefik2infoblox"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["."]
