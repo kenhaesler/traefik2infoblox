@@ -4,6 +4,19 @@ services:
     build: .
     container_name: traefik2infoblox
     restart: unless-stopped
+    # The image is based on Docker Hardened Images and runs as a non-root
+    # user (uid 65532). Grant it the group that owns the Docker socket:
+    #   export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+    group_add:
+      - "${DOCKER_GID:-998}"
+    read_only: true
+    tmpfs:
+      # Writable scratch space for the healthcheck heartbeat file.
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       # Read-only access to the Docker API to discover Traefik labels.
       - /var/run/docker.sock:/var/run/docker.sock:ro
